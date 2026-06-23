@@ -1,20 +1,36 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useWorkoutStore, type WorkoutExerciseDraft } from "@/lib/state/workoutStore";
+import { createWorkoutLog, type WorkoutLogCreateRequest } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth/AuthProvider";
+
+type WorkoutSetDraft = {
+  reps: number;
+  weightKg?: number;
+  rpe?: number;
+};
+
+type WorkoutExerciseDraft = {
+  name: string;
+  sets: WorkoutSetDraft[];
+};
 
 export default function LogWorkoutPage() {
-  const { addWorkout } = useWorkoutStore();
+  const { getIdToken } = useAuth();
   const workoutLogId = useMemo(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("workout_log_id");
   }, []);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [title, setTitle] = useState("Workout");
+  const [notes, setNotes] = useState("");
   const [exercises, setExercises] = useState<WorkoutExerciseDraft[]>([
-    { name: "Squat", sets: 3, reps: 5, rpe: 7 },
-    { name: "Bench Press", sets: 3, reps: 8, rpe: 7 }
+    { name: "Squat", sets: [{ reps: 5, weightKg: 80, rpe: 7 }] },
+    { name: "Bench Press", sets: [{ reps: 8, weightKg: 60, rpe: 7 }] }
   ]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
 
   useEffect(() => {
     // Placeholder: once a full "workout log editor" is implemented, this page should:
@@ -40,6 +56,17 @@ export default function LogWorkoutPage() {
               Editing started planned session log: <code>{workoutLogId}</code>
             </div>
           ) : null}
+          {error ? <div style={{ color: "#b91c1c" }}>{error}</div> : null}
+          {savedId ? (
+            <div className="card" style={{ boxShadow: "none" }}>
+              <div className="cardBody" style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 800 }}>Saved</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  Created workout log id: <code>{savedId}</code>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="grid2">
             <label>
               <div style={{ fontWeight: 650, fontSize: 12 }}>Date</div>
@@ -50,6 +77,11 @@ export default function LogWorkoutPage() {
               <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
             </label>
           </div>
+
+          <label>
+            <div style={{ fontWeight: 650, fontSize: 12 }}>Notes</div>
+            <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </label>
 
           <div style={{ fontWeight: 850, marginTop: 6 }}>Exercises</div>
           <div style={{ display: "grid", gap: 10 }}>
@@ -69,52 +101,89 @@ export default function LogWorkoutPage() {
                     />
                   </label>
 
-                  <div className="grid2">
-                    <label>
-                      <div style={{ fontWeight: 650, fontSize: 12 }}>Sets</div>
-                      <input
-                        className="input"
-                        type="number"
-                        value={ex.sets}
-                        min={1}
-                        onChange={(e) => {
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <div style={{ fontWeight: 800 }}>Sets</div>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
                           const next = [...exercises];
-                          next[idx] = { ...next[idx]!, sets: Number(e.target.value) };
+                          const sets = next[idx]!.sets.slice();
+                          sets.push({ reps: 8, weightKg: 0, rpe: 7 });
+                          next[idx] = { ...next[idx]!, sets };
                           setExercises(next);
                         }}
-                      />
-                    </label>
-                    <label>
-                      <div style={{ fontWeight: 650, fontSize: 12 }}>Reps</div>
-                      <input
-                        className="input"
-                        type="number"
-                        value={ex.reps}
-                        min={1}
-                        onChange={(e) => {
-                          const next = [...exercises];
-                          next[idx] = { ...next[idx]!, reps: Number(e.target.value) };
-                          setExercises(next);
-                        }}
-                      />
-                    </label>
+                      >
+                        Add set
+                      </button>
+                    </div>
+                    {ex.sets.map((s, sIdx) => (
+                      <div key={sIdx} className="grid2">
+                        <label>
+                          <div style={{ fontWeight: 650, fontSize: 12 }}>Reps</div>
+                          <input
+                            className="input"
+                            type="number"
+                            value={s.reps}
+                            min={0}
+                            onChange={(e) => {
+                              const next = [...exercises];
+                              const sets = next[idx]!.sets.slice();
+                              sets[sIdx] = { ...sets[sIdx]!, reps: Number(e.target.value) };
+                              next[idx] = { ...next[idx]!, sets };
+                              setExercises(next);
+                            }}
+                          />
+                        </label>
+                        <label>
+                          <div style={{ fontWeight: 650, fontSize: 12 }}>Weight (kg)</div>
+                          <input
+                            className="input"
+                            type="number"
+                            value={s.weightKg ?? 0}
+                            min={0}
+                            onChange={(e) => {
+                              const next = [...exercises];
+                              const sets = next[idx]!.sets.slice();
+                              sets[sIdx] = { ...sets[sIdx]!, weightKg: Number(e.target.value) };
+                              next[idx] = { ...next[idx]!, sets };
+                              setExercises(next);
+                            }}
+                          />
+                        </label>
+                        <label>
+                          <div style={{ fontWeight: 650, fontSize: 12 }}>RPE (1–10)</div>
+                          <input
+                            className="input"
+                            type="number"
+                            value={s.rpe ?? 7}
+                            min={1}
+                            max={10}
+                            onChange={(e) => {
+                              const next = [...exercises];
+                              const sets = next[idx]!.sets.slice();
+                              sets[sIdx] = { ...sets[sIdx]!, rpe: Number(e.target.value) };
+                              next[idx] = { ...next[idx]!, sets };
+                              setExercises(next);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btnDanger"
+                          onClick={() => {
+                            const next = [...exercises];
+                            const sets = next[idx]!.sets.filter((_, i) => i !== sIdx);
+                            next[idx] = { ...next[idx]!, sets };
+                            setExercises(next);
+                          }}
+                        >
+                          Remove set
+                        </button>
+                      </div>
+                    ))}
                   </div>
-
-                  <label>
-                    <div style={{ fontWeight: 650, fontSize: 12 }}>RPE (1–10)</div>
-                    <input
-                      className="input"
-                      type="number"
-                      value={ex.rpe}
-                      min={1}
-                      max={10}
-                      onChange={(e) => {
-                        const next = [...exercises];
-                        next[idx] = { ...next[idx]!, rpe: Number(e.target.value) };
-                        setExercises(next);
-                      }}
-                    />
-                  </label>
 
                   <button
                     className="btn btnDanger"
@@ -131,22 +200,55 @@ export default function LogWorkoutPage() {
 
           <button
             className="btn"
-            onClick={() => setExercises([...exercises, { name: "New exercise", sets: 3, reps: 8, rpe: 7 }])}
+            onClick={() => setExercises([...exercises, { name: "New exercise", sets: [{ reps: 8, weightKg: 0, rpe: 7 }] }])}
           >
             Add exercise
           </button>
 
           <button
             className="btn btnPrimary"
-            onClick={() => {
-              addWorkout({
-                date,
-                title,
-                exercises
-              });
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              setSavedId(null);
+              try {
+                const token = await getIdToken();
+                const started_at = `${date}T00:00:00Z`;
+                const body: WorkoutLogCreateRequest = {
+                  planned_session_id: null,
+                  started_at,
+                  ended_at: null,
+                  title,
+                  notes: notes || null,
+                  rpe: null,
+                  calories_burned: null,
+                  exercises: exercises.map((ex, idx) => ({
+                    exercise_id: null,
+                    position: idx,
+                    notes: null,
+                    sets: ex.sets.map((s, sIdx) => ({
+                      set_number: sIdx + 1,
+                      reps: s.reps,
+                      weight_kg: s.weightKg ?? null,
+                      rpe: s.rpe ?? null,
+                      is_warmup: false,
+                      duration_seconds: null,
+                      distance_meters: null,
+                      notes: null
+                    }))
+                  }))
+                };
+                const created = await createWorkoutLog(body, token);
+                setSavedId(created.id);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Failed to save workout");
+              } finally {
+                setBusy(false);
+              }
             }}
           >
-            Save workout
+            {busy ? "Saving..." : "Save workout"}
           </button>
 
           <div className="muted" style={{ fontSize: 12 }}>
