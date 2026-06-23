@@ -1,16 +1,30 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useWorkoutStore, type WorkoutExerciseDraft } from "@/lib/state/workoutStore";
 
 export default function LogWorkoutPage() {
   const { addWorkout } = useWorkoutStore();
+  const workoutLogId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("workout_log_id");
+  }, []);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [title, setTitle] = useState("Workout");
   const [exercises, setExercises] = useState<WorkoutExerciseDraft[]>([
     { name: "Squat", sets: 3, reps: 5, rpe: 7 },
     { name: "Bench Press", sets: 3, reps: 8, rpe: 7 }
   ]);
+
+  useEffect(() => {
+    // Placeholder: once a full "workout log editor" is implemented, this page should:
+    // 1) fetch workout log details by id
+    // 2) prefill the form with backend exercises/sets
+    // For now we just adjust title so the end-to-end flow is visible.
+    if (workoutLogId) {
+      setTitle(`Planned session log`);
+    }
+  }, [workoutLogId]);
 
   return (
     <div className="container">
@@ -21,6 +35,11 @@ export default function LogWorkoutPage() {
 
       <div className="card" style={{ marginTop: 12 }}>
         <div className="cardBody" style={{ display: "grid", gap: 12 }}>
+          {workoutLogId ? (
+            <div className="muted" style={{ fontSize: 12 }}>
+              Editing started planned session log: <code>{workoutLogId}</code>
+            </div>
+          ) : null}
           <div className="grid2">
             <label>
               <div style={{ fontWeight: 650, fontSize: 12 }}>Date</div>
@@ -131,7 +150,8 @@ export default function LogWorkoutPage() {
           </button>
 
           <div className="muted" style={{ fontSize: 12 }}>
-            Saved locally for now; will POST to backend workout log endpoint after integration.
+            When started from a plan, backend pre-fills the workout log with exercises/sets. This page will be upgraded
+            to fetch and edit that log by id.
           </div>
         </div>
       </div>

@@ -10,6 +10,16 @@ export function getApiBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_BACKEND_API_BASE_URL || "").replace(/\/+$/, "");
 }
 
+export type StartedPlannedSessionResponse = {
+  workout_log_id: string;
+  planned_session_id: string;
+};
+
+export type PlannedSessionStatusResponse = {
+  planned_session_id: string;
+  status: string;
+};
+
 // PUBLIC_INTERFACE
 export async function apiFetch<T>(
   path: string,
@@ -51,4 +61,30 @@ export async function apiFetch<T>(
   }
 
   return (await res.json()) as T;
+}
+
+// PUBLIC_INTERFACE
+export async function startPlannedSession(
+  sessionId: string,
+  token: string | null
+): Promise<StartedPlannedSessionResponse> {
+  /** Start a planned workout session by asking backend to create a prefilled workout_log. */
+  return apiFetch<StartedPlannedSessionResponse>(`/api/plans/sessions/${sessionId}/start`, {
+    method: "POST",
+    token
+  });
+}
+
+// PUBLIC_INTERFACE
+export async function updatePlannedSessionStatus(
+  sessionId: string,
+  status: "planned" | "in_progress" | "completed" | "skipped" | "cancelled",
+  token: string | null
+): Promise<PlannedSessionStatusResponse> {
+  /** Update planned session status (e.g., mark completed/skipped). */
+  return apiFetch<PlannedSessionStatusResponse>(`/api/plans/sessions/${sessionId}/status`, {
+    method: "PATCH",
+    token,
+    body: { status }
+  });
 }
